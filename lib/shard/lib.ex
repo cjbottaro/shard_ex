@@ -1,28 +1,39 @@
+require Logger
+
 defmodule Shard.Lib do
   @moduledoc false
 
-  def repo_for(shard) do
-    Module.concat([Shard, Repo, shard])
+  def normalize_shard(shard) do
+    case shard do
+      nil -> nil
+      s when is_binary(s) -> String.trim(shard)
+      a when is_atom(a) -> to_string(a) |> normalize_shard()
+    end
+  end
+
+  def ecto_repo_for(shard) do
+    Module.concat([Shard, Repos, shard])
   end
 
   def shutdown_repo_for(shard) do
-    shard |> repo_for |> shutdown_repo
+    shard |> ecto_repo_for |> shutdown_repo
   end
 
-  def otp_app_for(shard) do
+  def ecto_otp_app_for(shard) do
     "__shard_#{shard}__" |> String.to_atom
   end
 
-  def repo_config_for(shard) do
-    config = Application.get_env(:shard, :repo_defaults, [])
-    module = Application.get_env(:shard, :mod, Shard.Info)
-    Keyword.merge(config, module.info(shard))
+  def ecto_repo_config_for(shard, repo, config) do
+    Keyword.merge(config, repo.shard_config(shard))
   end
 
   def shutdown_repo(repo) do
     case Process.whereis(repo) do
       nil -> nil
-      pid -> repo.stop(pid)
+      pid ->
+        shard  = Module.split(repo) |> List.last
+        Logger.debug "Shutting down repo for shard: #{shard}"
+        repo.stop(pid)
     end
   end
 

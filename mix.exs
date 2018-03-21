@@ -5,7 +5,7 @@ defmodule Shard.Mixfile do
     [
       app: :shard,
       version: "0.1.0",
-      elixir: "~> 1.4",
+      elixir: "~> 1.6",
       build_embedded: Mix.env == :prod,
       start_permanent: Mix.env == :prod,
       elixirc_paths: elixirc_paths(Mix.env),
@@ -44,7 +44,7 @@ defmodule Shard.Mixfile do
     [
       {:ecto, "~> 2.1"},
       {:ex_doc, "~> 0.0", only: :dev},
-      {:postgrex, "~> 0.0", only: :test}
+      {:postgrex, "~> 0.0", only: [:dev, :test]}
     ]
   end
 end

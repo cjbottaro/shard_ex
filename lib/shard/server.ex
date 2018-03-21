@@ -1,18 +1,20 @@
 defmodule Shard.Server do
   @moduledoc false
-  
+
   use GenServer
 
   import Shard.Lib
 
-  def start_link(options \\ [], gen_options \\ []) do
+  def start_link(options, gen_options) do
     GenServer.start_link(__MODULE__, options, gen_options)
   end
 
-  def init(_options) do
+  def init({repo, config}) do
     {
       :ok,
       %{
+        repo: repo,
+        config: config,
         repo_map: %{},
         proc_map: %{}
       }
@@ -29,7 +31,7 @@ defmodule Shard.Server do
   def handle_call({:set, shard}, {pid, _}, state) do
     Process.monitor(pid)
 
-    ensure_repo_defined(shard)
+    ensure_repo_defined(shard, state)
     ensure_repo_started(shard)
 
     state = state
@@ -74,26 +76,26 @@ defmodule Shard.Server do
     {:noreply, state}
   end
 
-  defp ensure_repo_defined(shard) do
-    repo = repo_for(shard)
+  defp ensure_repo_defined(shard, %{repo: repo, config: config}) do
+    ecto_repo = ecto_repo_for(shard)
 
-    if !Code.ensure_loaded?(repo) do
-      otp_app     = otp_app_for(shard)
-      repo_config = repo_config_for(shard)
+    if !Code.ensure_loaded?(ecto_repo) do
+      ecto_otp_app     = ecto_otp_app_for(shard)
+      ecto_repo_config = ecto_repo_config_for(shard, repo, config)
 
       # Dynamically define the otp_app configuration for the repo.
       # Why? Ecto repos just work that way. Lucky Elixir doesn't
       # complain about us writing configs for dummy/fake otp apps.
-      Application.put_env(otp_app, repo, repo_config)
+      Application.put_env(ecto_otp_app, ecto_repo, ecto_repo_config)
 
       # Dynamically define the repo module.
-      definition = quote do: use Ecto.Repo, otp_app: unquote(otp_app)
-      defmodule repo, do: Module.eval_quoted(__MODULE__, definition)
+      definition = quote do: use Ecto.Repo, otp_app: unquote(ecto_otp_app)
+      defmodule ecto_repo, do: Module.eval_quoted(__MODULE__, definition)
     end
   end
 
   defp ensure_repo_started(shard) do
-    repo = repo_for(shard)
+    repo = ecto_repo_for(shard)
     if !Process.whereis(repo) do
       apply(repo, :start_link, [])
     end
