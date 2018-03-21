@@ -11,12 +11,12 @@ defmodule Shard.Lib do
     end
   end
 
-  def ecto_repo_for(shard) do
-    Module.concat([Shard, Repos, shard])
+  def ecto_repo_for(shard_repo, shard) do
+    Module.concat([shard_repo, EctoRepos, shard])
   end
 
-  def shutdown_repo_for(shard) do
-    shard |> ecto_repo_for |> shutdown_repo
+  def shutdown_repo_for(shard_repo, shard) do
+    ecto_repo_for(shard_repo, shard) |> shutdown_repo
   end
 
   def ecto_otp_app_for(shard) do
@@ -33,7 +33,7 @@ defmodule Shard.Lib do
       pid ->
         shard  = Module.split(repo) |> List.last
         Logger.debug "Shutting down repo for shard: #{shard}"
-        repo.stop(pid)
+        DynamicSupervisor.terminate_child(Shard.Repo.Supervisor, pid)
     end
   end
 

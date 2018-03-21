@@ -4,6 +4,7 @@ defmodule Shard.Server do
   use GenServer
 
   import Shard.Lib
+  alias Shard.Repo
 
   def start_link(options, gen_options) do
     GenServer.start_link(__MODULE__, options, gen_options)
@@ -73,7 +74,7 @@ defmodule Shard.Server do
     Process.monitor(pid)
 
     ensure_repo_defined(shard, state)
-    ensure_repo_started(shard)
+    ensure_repo_started(shard, state)
 
     state = state
       |> rem_proc(pid)
@@ -84,7 +85,7 @@ defmodule Shard.Server do
   end
 
   defp ensure_repo_defined(shard, %{repo: repo, config: config}) do
-    ecto_repo = ecto_repo_for(shard)
+    ecto_repo = ecto_repo_for(repo, shard)
 
     if !Code.ensure_loaded?(ecto_repo) do
       ecto_otp_app     = ecto_otp_app_for(shard)
@@ -101,10 +102,10 @@ defmodule Shard.Server do
     end
   end
 
-  defp ensure_repo_started(shard) do
-    repo = ecto_repo_for(shard)
+  defp ensure_repo_started(shard, %{repo: repo}) do
+    repo = ecto_repo_for(repo, shard)
     if !Process.whereis(repo) do
-      apply(repo, :start_link, [])
+      DynamicSupervisor.start_child(Repo.Supervisor, {repo, []})
     end
   end
 
@@ -124,7 +125,7 @@ defmodule Shard.Server do
     procs = MapSet.delete(procs, pid)
 
     if MapSet.size(procs) == 0 do
-      shutdown_repo_for(shard)
+      shutdown_repo_for(state.repo, shard)
       put_in(state.proc_map, Map.delete(state.proc_map, shard))
     else
       put_in(state, [:proc_map, shard], procs)

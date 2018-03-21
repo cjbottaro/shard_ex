@@ -9,6 +9,10 @@ defmodule Shard.Repo do
         Shard.Repo.start_link(__MODULE__, @otp_app)
       end
 
+      def child_spec(options) do
+        %{ id: __MODULE__, start: {__MODULE__, :start_link, options} }
+      end
+
       def init(config), do: config
       defoverridable [init: 1]
 
@@ -156,7 +160,7 @@ defmodule Shard.Repo do
     case get_shard(repo) do
       nil -> raise ArgumentError, "no shard set, call #{inspect(repo)}.set first"
       shard ->
-        repo = Shard.Lib.ecto_repo_for(shard)
+        repo = Shard.Lib.ecto_repo_for(repo, shard)
         apply(repo, fn_name, args)
     end
   end
