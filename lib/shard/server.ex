@@ -29,17 +29,10 @@ defmodule Shard.Server do
   end
 
   def handle_call({:set, shard}, {pid, _}, state) do
-    Process.monitor(pid)
-
-    ensure_repo_defined(shard, state)
-    ensure_repo_started(shard)
-
-    state = state
-      |> rem_proc(pid)
-      |> set_proc(shard, pid)
-      |> set_repo(shard, pid)
-
-    {:reply, :ok, state }
+    case state.repo_map[pid] do
+      ^shard -> {:reply, :ok, state} # Noop, they are already on this shard.
+      _ -> do_set(shard, pid, state)
+    end
   end
 
   def handle_call(:get, {pid, _}, state) do
@@ -74,6 +67,20 @@ defmodule Shard.Server do
       |> rem_proc(pid)
       |> rem_repo(pid)
     {:noreply, state}
+  end
+
+  def do_set(shard, pid, state) do
+    Process.monitor(pid)
+
+    ensure_repo_defined(shard, state)
+    ensure_repo_started(shard)
+
+    state = state
+      |> rem_proc(pid)
+      |> set_proc(shard, pid)
+      |> set_repo(shard, pid)
+
+    {:reply, :ok, state}
   end
 
   defp ensure_repo_defined(shard, %{repo: repo, config: config}) do
