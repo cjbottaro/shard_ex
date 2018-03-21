@@ -1,6 +1,6 @@
 # Shard
 
-Use Ecto repositories across multiple databases and multiple servers.
+Use Ecto repositories across multiple databases and servers.
 
 ## Quickstart
 
@@ -60,19 +60,19 @@ defmodule Repo do
 
   def shard_config("database01") do
     config
-      |> Keyword.put(:host, "foo.company.com")
+      |> Keyword.put(:hostname, "foo.company.com")
       |> Keyword.put(:database, "db01")
   end
 
   def shard_config("database02") do
     config
-      |> Keyword.put(:host, "bar.company.com")
+      |> Keyword.put(:hostname, "bar.company.com")
       |> Keyword.put(:database, "db02")
   end
 
   def shard_config(shard) do
     config
-      |> Keyword.put(:host, "db.company.com")
+      |> Keyword.put(:hostname, "db.company.com")
       |> Keyword.put(:database, shard)
   end
 end
