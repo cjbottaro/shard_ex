@@ -81,6 +81,18 @@ end
 ## Cleaning up (closing connections)
 
 Shard keeps track of what Ecto repos are being used by what processes. If a
-repo is not being used by any process, then Shard will shut it down. As soon
-as a process calls `set` on a shutdown repo, Shard will automatically
-start it up again.
+repo is not being used by any process, then Shard will shut it down.
+
+The repo will be started again when some process tries to use it.
+
+If the `:cooldown` option is set, Shard will keep track of the last time an
+Ecto repo was used and only shut it down after `:cooldown` (time in ms).
+
+```elixir
+config :my_app, ShardedRepo,
+  cooldown: 5000
+```
+
+This can be said as, "Wait 5000 ms before shutting down unused Ecto repos."
+
+Using this option can reduce database connection churn.

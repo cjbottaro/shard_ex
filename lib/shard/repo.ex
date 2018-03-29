@@ -159,8 +159,13 @@ defmodule Shard.Repo do
     end
   end
 
+  @defaults [
+    cooldown: nil
+  ]
   def start_link(repo, otp_app) do
-    config = Application.get_env(otp_app, repo)
+    mix_config = Application.get_env(otp_app, repo)
+    config = @defaults
+      |> Keyword.merge(mix_config)
       |> repo.init
       |> Enum.reject(fn {_, v} -> v == nil end) # Reject nil values.
 

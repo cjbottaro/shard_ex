@@ -5,27 +5,41 @@ defmodule Shard.Server do
 
   import Shard.Lib
 
+  # TODO will this waste too many cycles?
+  @cooldown_purge_interval 100
+
   def start_link(options, gen_options) do
     GenServer.start_link(__MODULE__, options, gen_options)
   end
 
   def init({repo, config}) do
+    if config[:cooldown] do
+      Process.send_after(self(), :cooldown_purge, @cooldown_purge_interval)
+    end
+
     {
       :ok,
       %{
         repo: repo,
         config: config,
+
+        # %{ pid => shard_name }
+        # What shard is this pid currently set to?
         repo_map: %{},
-        proc_map: %{}
+
+        # %{ shard_name => set_of_pids }
+        # Who all is using this shard?
+        proc_map: %{},
+
+        # %{ shard_name => timestamp_in_ms }
+        # When was this shard last used?
+        last_use: %{},
       }
     }
   end
 
   def handle_call({:set, nil}, {pid, _}, state) do
-    state = state
-      |> rem_proc(pid)
-      |> rem_repo(pid)
-    {:reply, :ok, state}
+    {:reply, :ok, unset(state, pid)}
   end
 
   def handle_call({:set, shard}, {pid, _}, state) do
@@ -63,9 +77,27 @@ defmodule Shard.Server do
   # internal state, potentially shutting down the repo if nothing else is
   # using it.
   def handle_info({:DOWN, _ref, :process, pid, _reason}, state) do
-    state = state
-      |> rem_proc(pid)
-      |> rem_repo(pid)
+    {:noreply, unset(state, pid)}
+  end
+
+  # If cooldown option is set, then wake up periodically to see if we can
+  # shutdown any unused Ecto repos.
+  def handle_info(:cooldown_purge, state) do
+    cooldown = state.config[:cooldown]
+
+    state = Map.update! state, :last_use, fn last_use ->
+      Enum.reduce last_use, %{}, fn {shard, time}, last_use ->
+        if :os.system_time(:millisecond) - time >= cooldown do
+          shutdown_repo_for(state.repo, shard)
+          last_use
+        else
+          Map.put(last_use, shard, time)
+        end
+      end
+    end
+
+    Process.send_after(self(), :cooldown_purge, @cooldown_purge_interval)
+
     {:noreply, state}
   end
 
@@ -74,10 +106,10 @@ defmodule Shard.Server do
 
     ensure_repo_defined(shard, state)
 
-    state = state
-      |> rem_proc(pid)
+    state = unset(state, pid)
       |> set_proc(shard, pid)
       |> set_repo(shard, pid)
+      |> in_use(shard)
 
     {:reply, :ok, state}
   end
@@ -104,28 +136,78 @@ defmodule Shard.Server do
     put_in(state, [:repo_map, pid], shard)
   end
 
-  defp set_proc(state, shard, pid) do
-    proc_map = Map.put_new(state.proc_map, shard, MapSet.new)
-    procs = MapSet.put(proc_map[shard], pid)
-    put_in(state, [:proc_map, shard], procs)
-  end
-
-  defp rem_proc(state, pid) do
-    shard = state.repo_map[pid]
-    procs = state.proc_map[shard] || MapSet.new
-    procs = MapSet.delete(procs, pid)
-
-    if MapSet.size(procs) == 0 do
-      shutdown_repo_for(state.repo, shard)
-      put_in(state.proc_map, Map.delete(state.proc_map, shard))
-    else
-      put_in(state, [:proc_map, shard], procs)
-    end
-  end
-
   defp rem_repo(state, pid) do
     repo_map = Map.delete(state.repo_map, pid)
     %{ state | repo_map: repo_map }
+  end
+
+  defp set_proc(state, shard, pid) do
+    Map.update! state, :proc_map, fn proc_map ->
+      Map.update proc_map, shard, MapSet.new([pid]), fn pids ->
+        MapSet.put(pids, pid)
+      end
+    end
+  end
+
+  defp rem_proc(state, shard, pid) do
+    Map.update! state, :proc_map, fn proc_map ->
+      Map.update! proc_map, shard, fn pids ->
+        MapSet.delete(pids, pid)
+      end
+    end
+  end
+
+  # If a shard is in use, it should not be in the last_use map.
+  defp in_use(state, shard) do
+    Map.update!(state, :last_use, &Map.delete(&1, shard))
+  end
+
+  defp unset(state, pid) do
+    if shard = state.repo_map[pid] do
+      state |> rem_proc(shard, pid) |> rem_repo(pid) |> prune
+    else
+      state
+    end
+  end
+
+  defp prune(state) do
+    {unused, proc_map} = state.proc_map
+      |> Map.to_list
+      |> prune_proc_map
+
+    state = %{state | proc_map: proc_map}
+
+    if state.config[:cooldown] do
+      record_last_use(state, unused)
+    else
+      shutdown_unused(state, unused)
+    end
+  end
+
+  # Nifty little function to prune proc_map where pids are empty and also
+  # return which shards were empty.
+  @spec prune_proc_map(list) :: {unused :: list, pruned :: map}
+  defp prune_proc_map(proc_map, unused \\ [], pruned \\ %{})
+  defp prune_proc_map([], unused, pruned), do: {unused, pruned}
+  defp prune_proc_map([{shard, pids} | rest], unused, pruned) do
+    if MapSet.size(pids) == 0 do
+      prune_proc_map(rest, [shard | unused], pruned)
+    else
+      prune_proc_map(rest, unused, Map.put(pruned, shard, pids))
+    end
+  end
+
+  defp record_last_use(state, unused) do
+    Map.update! state, :last_use, fn last_use ->
+      Enum.reduce unused, last_use, fn shard, last_use ->
+        Map.put(last_use, shard, :os.system_time(:millisecond))
+      end
+    end
+  end
+
+  defp shutdown_unused(state, unused) do
+    Enum.each(unused, &shutdown_repo_for(state.repo, &1))
+    state
   end
 
 end
