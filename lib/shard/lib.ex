@@ -27,6 +27,13 @@ defmodule Shard.Lib do
     Keyword.merge(config, repo.shard_config(shard))
   end
 
+  def ensure_repo_started(repo) do
+    if !Process.whereis(repo) do
+      DynamicSupervisor.start_child(Shard.Repo.Supervisor, {repo, []})
+    end
+    repo
+  end
+
   def shutdown_repo(repo) do
     case Process.whereis(repo) do
       nil -> nil

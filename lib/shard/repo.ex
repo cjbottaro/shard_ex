@@ -190,8 +190,10 @@ defmodule Shard.Repo do
     case get_shard(repo) do
       nil -> raise ArgumentError, "no shard set, call #{inspect(repo)}.set first"
       shard ->
-        repo = Shard.Lib.ecto_repo_for(repo, shard)
-        apply(repo, fn_name, args)
+        repo
+          |> Shard.Lib.ecto_repo_for(shard)
+          |> Shard.Lib.ensure_repo_started
+          |> apply(fn_name, args)
     end
   end
 

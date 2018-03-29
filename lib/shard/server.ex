@@ -4,7 +4,6 @@ defmodule Shard.Server do
   use GenServer
 
   import Shard.Lib
-  alias Shard.Repo
 
   def start_link(options, gen_options) do
     GenServer.start_link(__MODULE__, options, gen_options)
@@ -31,7 +30,7 @@ defmodule Shard.Server do
 
   def handle_call({:set, shard}, {pid, _}, state) do
     case state.repo_map[pid] do
-      ^shard -> {:reply, :ok, state} # Noop, they are already on this shard.
+      ^shard -> {:reply, :already_set, state} # Noop, they are already on this shard.
       _ -> do_set(shard, pid, state)
     end
   end
@@ -74,7 +73,6 @@ defmodule Shard.Server do
     Process.monitor(pid)
 
     ensure_repo_defined(shard, state)
-    ensure_repo_started(shard, state)
 
     state = state
       |> rem_proc(pid)
@@ -99,13 +97,6 @@ defmodule Shard.Server do
       # Dynamically define the repo module.
       definition = quote do: use Ecto.Repo, otp_app: unquote(ecto_otp_app)
       defmodule ecto_repo, do: Module.eval_quoted(__MODULE__, definition)
-    end
-  end
-
-  defp ensure_repo_started(shard, %{repo: repo}) do
-    repo = ecto_repo_for(repo, shard)
-    if !Process.whereis(repo) do
-      DynamicSupervisor.start_child(Repo.Supervisor, {repo, []})
     end
   end
 
