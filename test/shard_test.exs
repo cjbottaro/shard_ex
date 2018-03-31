@@ -1,73 +1,91 @@
 defmodule ShardTest do
   use ExUnit.Case
 
-  alias Shard.TestHelper
+  alias Shard.TestRepo
 
   setup do
-    TestHelper.reset
+    TestRepo.reset
   end
 
   test "setting a shard" do
-    Shard.set(:dev)
-    state = TestHelper.debug
+    TestRepo.set_shard(:dev)
+    state = TestRepo.debug
 
-    assert MapSet.member?(state.proc_map[:dev], self())
-    assert state.repo_map[self()] == :dev
+    assert MapSet.member?(state.in_use["dev"], self())
+    assert state.current[self()] == "dev"
   end
 
   test "changing a shard" do
-    Shard.set(:dev)
-    Shard.set(:alpha)
-    state = TestHelper.debug
+    TestRepo.set_shard(:dev)
+    TestRepo.set_shard(:alpha)
+    state = TestRepo.debug
 
-    assert Map.size(state.proc_map) == 1
-    assert MapSet.size(state.proc_map[:alpha])
-    assert MapSet.member?(state.proc_map[:alpha], self())
+    assert Map.size(state.in_use) == 1
+    assert MapSet.size(state.in_use["alpha"]) == 1
+    assert MapSet.member?(state.in_use["alpha"], self())
 
-    assert Map.size(state.repo_map) == 1
-    assert state.repo_map[self()] == :alpha
+    assert Map.size(state.current) == 1
+    assert state.current[self()] == "alpha"
   end
 
-  test "if no process is using a repo, it should be shutdown" do
-    Shard.set(:dev)
-    Shard.set(:alpha)
+  test "if no process is using a repo, it should be marked as unused" do
+    TestRepo.set_shard(:dev)
+    TestRepo.set_shard(:alpha)
+    state = TestRepo.debug
 
-    repo = Shard.Lib.repo_for(:dev)
-    assert Process.whereis(repo) == nil
-    repo = Shard.Lib.repo_for(:alpha)
-    assert Process.whereis(repo) != nil
+    assert state.last_used["dev"]
+    refute state.last_used["alpha"]
 
-    Shard.set(:dev)
+    TestRepo.set_shard(:dev)
+    state = TestRepo.debug
 
-    repo = Shard.Lib.repo_for(:dev)
-    assert Process.whereis(repo) != nil
-    repo = Shard.Lib.repo_for(:alpha)
-    assert Process.whereis(repo) == nil
+    assert state.last_used["alpha"]
+    refute state.last_used["dev"]
   end
 
-  test "if a process dies, it should release the repo it was using" do
-    task = Task.async(fn -> Shard.set(:dev) end)
+  test "if a process dies, mark the repo as unused" do
+    task = Task.async(fn -> TestRepo.set_shard(:dev) end)
     Task.await(task)
 
     # Gotta figure out how to wait long enough for the Shard.Server to finish
     # processing the :DOWN message from the above process exiting. Easiest way
     # I can think of is to put another message on and block until that message
     # is processed.
-    TestHelper.debug
+    state = TestRepo.debug
 
-    repo = Shard.Lib.repo_for(:dev)
-    assert Process.whereis(repo) == nil
+    assert state.last_used["dev"]
   end
 
-  test "if a process dies abnormally, it should release the repo too" do
+  test "a shard should not be marked as used as long as something is using it" do
+    {:ok, task} = Task.start_link fn ->
+      TestRepo.set_shard(:dev)
+      :timer.sleep(:infinity)
+    end
+
+    TestRepo.set_shard(:dev)
+
+    state = TestRepo.debug
+    assert MapSet.size(state.in_use["dev"]) == 2
+
+    TestRepo.set_shard(nil)
+
+    state = TestRepo.debug
+    assert MapSet.size(state.in_use["dev"]) == 1
+    refute state.last_used["dev"]
+
+    # Cleanup
+    Process.exit(task, :normal)
+  end
+
+  test "if a process dies abnormally, it should mark the repo as unused" do
     test_pid = self()
     {child_pid, _ref} = spawn_monitor fn ->
-      Shard.set(:dev)
+      TestRepo.set_shard(:dev)
       send(test_pid, :ready)
       :timer.sleep(:infinity)
     end
 
-    # Ensure Shard.set has been called.
+    # Ensure Shard.set_shard has been called.
     receive do
       :ready -> nil
     end
@@ -81,10 +99,9 @@ defmodule ShardTest do
     end
 
     # Make sure the Shard server has processed the brutal death also.
-    TestHelper.debug
+    state = TestRepo.debug
 
-    repo = Shard.Lib.repo_for(:dev)
-    assert Process.whereis(repo) == nil
+    assert state.last_used["dev"]
   end
 
 end

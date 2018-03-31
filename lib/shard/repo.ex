@@ -1,5 +1,7 @@
 defmodule Shard.Repo do
 
+  @type t :: GenServer.server
+
   defmacro __using__(options) do
     quote bind_quoted: [options: options] do
 
@@ -160,7 +162,7 @@ defmodule Shard.Repo do
   end
 
   @defaults [
-    cooldown: nil
+    cooldown: 10_000
   ]
   def start_link(repo, otp_app) do
     mix_config = Application.get_env(otp_app, repo)

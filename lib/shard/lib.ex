@@ -44,4 +44,8 @@ defmodule Shard.Lib do
     end
   end
 
+  def now do
+    :os.system_time(:millisecond)
+  end
+
 end
