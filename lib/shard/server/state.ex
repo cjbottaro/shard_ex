@@ -13,6 +13,13 @@ defmodule Shard.Server.State do
   @type repo :: Shard.Repo.t
   @type state :: %{required(:repo) => repo}
   @type shard :: String.t
+  @type debug_info :: %{
+    required(:shards) => [shard],
+    required(:current) => %{pid => shard},
+    required(:in_use) => %{shard => [pid]},
+    required(:last_used) => %{shard => timestamp_in_ms}
+  }
+  @type timestamp_in_ms :: integer
 
   @doc """
   Initialize the state.
@@ -67,7 +74,7 @@ defmodule Shard.Server.State do
   @doc """
   Debug the state.
   """
-  @callback debug(state) :: any
+  @callback debug(state) :: debug_info
 
   @doc """
   Reset all state back to what init/1 returned.
