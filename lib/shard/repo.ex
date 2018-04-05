@@ -180,7 +180,10 @@ defmodule Shard.Repo do
   end
 
   def get_shard(module) do
-    GenServer.call(module, :get)
+    case GenServer.call(module, :get) do
+      nil -> set_from_ancestor(module)
+      shard -> shard
+    end
   end
 
   def use_shard(module, shard, f) do
@@ -204,4 +207,20 @@ defmodule Shard.Repo do
     end
   end
 
+  defp set_from_ancestor(repo) do
+    shard = Enum.find_value ancestors(), fn ancestor ->
+      GenServer.call(repo, {:get, ancestor})
+    end
+    if shard, do: set_shard(repo, shard)
+    shard
+  end
+
+  # This is sketch...
+  defp ancestors do
+    {:dictionary, d} = :erlang.process_info(self(), :dictionary)
+    Enum.find_value d, fn
+      {:"$ancestors", ancestors} -> ancestors
+      _ -> false
+    end
+  end
 end

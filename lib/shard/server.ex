@@ -42,6 +42,11 @@ defmodule Shard.Server do
     end
   end
 
+  # Private api called by Repo.delegate/3.
+  def handle_call({:get, ancestor}, {_pid, _}, state) do
+    {:reply, @state.current(ancestor, state), state}
+  end
+
   def handle_call(:get, {pid, _}, state) do
     {:reply, @state.current(pid, state), state}
   end
