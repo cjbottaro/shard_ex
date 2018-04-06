@@ -217,10 +217,9 @@ defmodule Shard.Repo do
 
   # This is sketch...
   defp ancestors do
-    {:dictionary, d} = :erlang.process_info(self(), :dictionary)
-    Enum.find_value d, fn
-      {:"$ancestors", ancestors} -> ancestors
-      _ -> false
+    case :erlang.get(:"$ancestors") do
+      :undefined -> []
+      ancestors -> ancestors
     end
   end
 end
